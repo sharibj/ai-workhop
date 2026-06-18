@@ -1,4 +1,4 @@
-package com.workshop;
+package com.workshop.models;
 
 import com.fasterxml.jackson.databind.JsonNode;
 

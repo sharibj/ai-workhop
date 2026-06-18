@@ -1,4 +1,4 @@
-package com.workshop;
+package com.workshop.utilities;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -9,7 +9,7 @@ import java.util.Map;
  * Each glyph is 5 rows tall and 5 columns wide (plus a 1-col gap when rendered).
  * Only A–Z, 0–9, space and a fallback '?' are defined — anything else renders as '?'.
  */
-final class BannerFont {
+public final class BannerFont {
 
     static final int ROWS = 5;
     private static final Map<Character, String[]> GLYPHS = new HashMap<>();

@@ -3,7 +3,7 @@ package com.workshop.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.workshop.Speaker;
+import com.workshop.utilities.Speaker;
 
 /**
  * STEP 4 — the "speak the name" capability, exposed to the LLM as a tool.

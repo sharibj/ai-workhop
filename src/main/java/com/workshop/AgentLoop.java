@@ -1,6 +1,8 @@
 package com.workshop;
 
+import com.workshop.models.Conversation;
 import com.workshop.tools.ToolRegistry;
+import com.workshop.utilities.GeminiClient;
 
 /**
  * STEP 5 — the agent loop.
