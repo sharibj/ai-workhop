@@ -38,13 +38,16 @@ public class Bootstrap {
     private static final String TTS_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent";
 
-    private static final String GREEN = "\033[1;32m";
-    private static final String RED   = "\033[1;31m";
-    private static final String DIM   = "\033[2m";
-    private static final String RESET = "\033[0m";
+    private static final String GREEN  = "\033[1;32m";
+    private static final String RED    = "\033[1;31m";
+    private static final String YELLOW = "\033[1;33m";
+    private static final String DIM    = "\033[2m";
+    private static final String RESET  = "\033[0m";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP = HttpClient.newHttpClient();
+
+    private static int warnings = 0;
 
     public static void main(String[] args) {
         System.out.println();
@@ -61,7 +64,13 @@ public class Bootstrap {
         System.out.println();
         System.out.println("──────────────────────────────────────────────────────");
         if (java && key && llm && audio) {
-            System.out.println(GREEN + "  ✅ READY — see you at the workshop!" + RESET);
+            if (warnings > 0) {
+                System.out.println(YELLOW + "  ✅ READY (with " + warnings + " warning" +
+                        (warnings == 1 ? "" : "s") + ") — see above." + RESET);
+                System.out.println("     Setup is fine; quota will reset / can be topped up before the workshop.");
+            } else {
+                System.out.println(GREEN + "  ✅ READY — see you at the workshop!" + RESET);
+            }
         } else {
             System.out.println(RED + "  ❌ NEEDS SETUP — see the messages above." + RESET);
             System.out.println("     Open the README for fix instructions.");
@@ -74,8 +83,13 @@ public class Bootstrap {
     // Check runner
     // ─────────────────────────────────────────────────────────────────
 
+    /** Sentinel: throw to mark a check PASS but with a warning (e.g. quota exhausted). */
+    private static class QuotaWarning extends RuntimeException {
+        QuotaWarning(String msg) { super(msg); }
+    }
+
     private interface Check {
-        /** Throw with a human-readable message on failure. Return optional detail on success. */
+        /** Throw for FAIL. Throw QuotaWarning for PASS-with-warning. Return detail on PASS. */
         String run() throws Exception;
     }
 
@@ -85,6 +99,11 @@ public class Bootstrap {
             String detail = check.run();
             System.out.println(GREEN + "PASS" + RESET +
                     (detail == null || detail.isEmpty() ? "" : "  " + DIM + detail + RESET));
+            return true;
+        } catch (QuotaWarning w) {
+            System.out.println(YELLOW + "PASS (with warning)" + RESET);
+            System.out.println("       " + YELLOW + w.getMessage() + RESET);
+            warnings++;
             return true;
         } catch (Exception e) {
             System.out.println(RED + "FAIL" + RESET);
@@ -162,6 +181,12 @@ public class Bootstrap {
             throw new RuntimeException("Gemini rejected the API key (HTTP " + res.statusCode() +
                     "). Check that GEMINI_API_KEY is valid.");
         }
+        if (res.statusCode() == 429) {
+            // Quota exhausted — but auth + routing + API enablement all worked. That's
+            // what this check is really verifying. Top up before the workshop.
+            throw new QuotaWarning("HTTP 429 — your key works but the daily quota is " +
+                    "exhausted. Setup is fine; you'll just need quota again on workshop day.");
+        }
         if (res.statusCode() / 100 != 2) {
             throw new RuntimeException("Gemini returned HTTP " + res.statusCode() + ": " +
                     truncate(res.body(), 200));
@@ -204,6 +229,10 @@ public class Bootstrap {
                 .build();
 
         HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() == 429) {
+            throw new QuotaWarning("HTTP 429 — TTS quota exhausted. Setup is fine; " +
+                    "audio playback couldn't be tested end-to-end this run.");
+        }
         if (res.statusCode() / 100 != 2) {
             throw new RuntimeException("Gemini TTS returned HTTP " + res.statusCode() + ": " +
                     truncate(res.body(), 200));
