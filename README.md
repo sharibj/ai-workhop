@@ -2,7 +2,7 @@
 
 Welcome! This branch is a tiny readiness check for the **"Demystifying AI Agents — By Building One"** workshop.
 
-Before the workshop, please **clone this branch and run it once.** It tells you whether your machine is ready, or what to fix.
+Before the workshop, please **run it once.** It tells you whether your machine is ready, or what to fix.
 
 ## What it checks
 
@@ -25,11 +25,10 @@ export GEMINI_API_KEY=paste-your-key-here
 
 (For convenience, add the line to your `~/.zshrc` or `~/.bashrc` so it sticks across terminals.)
 
-### 3. Clone and run
+### 3. Compile and run
 
 ```bash
-git clone -b sj/bootstrap https://github.com/sharibj/ai-workhop.git
-cd ai-workhop
+mvn -q clean compile
 mvn -q exec:java
 ```
 
