@@ -7,14 +7,13 @@ We "wake up" the agent gradually by calling step methods in `AgentApp.java`.
 
 ```bash
 export GEMINI_API_KEY=...your key...
-mvn -q compile
-mvn -q exec:java
+mvn -q compile && mvn -q exec:java
 ```
 
 In a second terminal pane (recommended for the demo):
 
 ```bash
-tail -f gemini.log    # watch every request/response Gemini sees
+tail -f gemini.log | bat --paging=never -l json --color=always
 ```
 
 ## Workshop Progression Guide
