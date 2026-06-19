@@ -1,11 +1,11 @@
-package com.workshop.utilities;
+package com.workshop.gemini;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.workshop.gemini.models.Content;
+import com.workshop.gemini.models.Part;
 import com.workshop.models.Conversation;
-import com.workshop.models.Message;
+import com.workshop.tools.ToolRegistry;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -55,61 +55,74 @@ public class GeminiClient {
     // STEP 1 — single-shot, stateless completion.
     // ─────────────────────────────────────────────────────────────────────
     public String complete(String prompt) throws Exception {
-        ObjectNode body = json.createObjectNode();
-        ArrayNode contents = body.putArray("contents");
-        ObjectNode turn = contents.addObject();
-        turn.put("role", "user");
-        turn.putArray("parts").addObject().put("text", prompt);
-
-        JsonNode response = post(body);
-        return extractText(response);
+        GeminiRequest geminiRequest = new GeminiRequest(prompt);
+        return post(geminiRequest).text();
     }
-
+    
+    
+    public String complete(List<Content> contents) throws Exception {
+        GeminiRequest geminiRequest = new GeminiRequest(contents);
+        return post(geminiRequest).text();
+    }
+    
+    public String complete(GeminiRequest geminiRequest) throws Exception {
+        return post(geminiRequest).text();
+    }
+    
+    
+    
     // ─────────────────────────────────────────────────────────────────────
     // STEP 2/3 — multi-turn chat. Optionally asks for JSON output.
     //   If conv has a system prompt set, it's attached as `systemInstruction`.
     // ─────────────────────────────────────────────────────────────────────
-    public String chat(Conversation conv, boolean structured) throws Exception {
-        ObjectNode body = json.createObjectNode();
-        attachSystemPrompt(body, conv.systemPrompt());
-        body.set("contents", buildContents(conv.messages()));
 
-        if (structured) {
-            // Tell Gemini to emit JSON — the parser on our side will read it.
-            ObjectNode generationConfig = body.putObject("generationConfig");
-            generationConfig.put("responseMimeType", "application/json");
+    public String chat(Conversation conversation) throws Exception {
+        return chat(conversation, false);
+    }
+
+    public String chat(Conversation conv, boolean structured) throws Exception {
+        GeminiRequest request = new GeminiRequest(GeminiRequest.contentsFromMessages(conv.messages()));
+
+        if (conv.systemPrompt() != null && !conv.systemPrompt().isBlank()) {
+            request.systemInstruction = new GeminiRequest.SystemInstruction(conv.systemPrompt());
         }
 
-        JsonNode response = post(body);
-        return extractText(response);
+        if (structured) {
+            request.generationConfig = new GeminiRequest.GenerationConfig();
+            request.generationConfig.responseMimeType = "application/json";
+        }
+
+        return post(request).text();
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // STEP 4/5 — chat with tool declarations. Model may return a functionCall.
     // ─────────────────────────────────────────────────────────────────────
-    public Reply chatWithTools(Conversation conv, JsonNode toolDeclarations) throws Exception {
-        ObjectNode body = json.createObjectNode();
-        attachSystemPrompt(body, conv.systemPrompt());
-        body.set("contents", buildContents(conv.messages()));
-        // Attach tools so Gemini knows what it may call.
-        ArrayNode toolsArr = body.putArray("tools");
-        ObjectNode toolsObj = toolsArr.addObject();
-        toolsObj.set("functionDeclarations", toolDeclarations);
+    public Reply chatWithTools(Conversation conv, ToolRegistry tools) throws Exception {
+        GeminiRequest request = new GeminiRequest(GeminiRequest.contentsFromMessages(conv.messages()));
 
-        JsonNode response = post(body);
-
-        // Look at the first candidate's first part: text OR functionCall.
-        JsonNode part = response
-                .path("candidates").path(0)
-                .path("content").path("parts").path(0);
-
-        if (part.has("functionCall")) {
-            JsonNode fc = part.get("functionCall");
-            String name = fc.get("name").asText();
-            JsonNode args = fc.path("args");
-            return new Reply(null, new ToolCall(name, args));
+        if (conv.systemPrompt() != null && !conv.systemPrompt().isBlank()) {
+            request.systemInstruction = new GeminiRequest.SystemInstruction(conv.systemPrompt());
         }
-        return new Reply(part.path("text").asText(""), null);
+
+        request.setTools(tools);
+
+        GeminiResponse response = post(request);
+        Part.FunctionCall fc = response.functionCall();
+
+        if (fc != null) {
+            return new Reply(null, new ToolCall(fc.name, fc.args));
+        }
+        return new Reply(response.text(), null);
+    }
+    public Reply chatWithTools(GeminiRequest request) throws Exception {
+        GeminiResponse response = post(request);
+        Part.FunctionCall fc = response.functionCall();
+        
+        if (fc != null) {
+            return new Reply(null, new ToolCall(fc.name, fc.args));
+        }
+        return new Reply(response.text(), null);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -121,34 +134,30 @@ public class GeminiClient {
                 "https://generativelanguage.googleapis.com/v1beta/models/" +
                 "gemini-2.5-flash-preview-tts:generateContent";
 
-        ObjectNode body = json.createObjectNode();
-        ArrayNode contents = body.putArray("contents");
-        contents.addObject().putArray("parts").addObject().put("text", text);
+        GeminiRequest request = new GeminiRequest(
+                List.of(new Content(null,
+                        List.of(new Part(text)))));
 
-        ObjectNode genCfg = body.putObject("generationConfig");
-        genCfg.putArray("responseModalities").add("AUDIO");
-        // Pick a voice — Gemini exposes named prebuilt voices.
-        ObjectNode speechCfg = genCfg.putObject("speechConfig");
-        ObjectNode voiceCfg = speechCfg.putObject("voiceConfig");
-        voiceCfg.putObject("prebuiltVoiceConfig").put("voiceName", "Kore");
+        request.generationConfig = new GeminiRequest.GenerationConfig();
+        request.generationConfig.responseModalities = List.of("AUDIO");
+        request.generationConfig.speechConfig = new GeminiRequest.SpeechConfig("Kore");
 
+        String requestBody = json.writeValueAsString(request);
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(ttsUrl + "?key=" + apiKey))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
         if (res.statusCode() / 100 != 2) {
             throw new RuntimeException("Gemini TTS error " + res.statusCode() + ": " + res.body());
         }
-        JsonNode root = json.readTree(res.body());
-        String b64 = root.path("candidates").path(0)
-                .path("content").path("parts").path(0)
-                .path("inlineData").path("data").asText("");
+
+        GeminiResponse response = json.readValue(res.body(), GeminiResponse.class);
+        String b64 = response.inlineData();
         if (b64.isEmpty()) {
-            String finishReason = root.path("candidates").path(0).path("finishReason").asText("?");
             throw new RuntimeException(
-                "Gemini TTS returned no audio (finishReason=" + finishReason + "). " +
+                "Gemini TTS returned no audio (finishReason=" + response.finishReason() + "). " +
                 "Common cause: the input text was too short or got filtered. " +
                 "Try a fuller utterance.");
         }
@@ -173,57 +182,17 @@ public class GeminiClient {
         return h.array();
     }
 
-    private void attachSystemPrompt(ObjectNode body, String prompt) {
-        if (prompt == null || prompt.isBlank()) return;
-        ObjectNode sys = body.putObject("systemInstruction");
-        sys.putArray("parts").addObject().put("text", prompt);
-    }
-
     // ─────────────────────────────────────────────────────────────────────
-    // Helpers
+    // HTTP
     // ─────────────────────────────────────────────────────────────────────
 
-    private ArrayNode buildContents(List<Message> history) {
-        ArrayNode contents = json.createArrayNode();
-        for (Message m : history) {
-            ObjectNode turn = contents.addObject();
-            // Gemini accepts roles "user" and "model"; tool results are sent as
-            // a "user" turn carrying a functionResponse part (see addToolResult below).
-            String role = m.role().equals("tool") ? "user" : m.role();
-            turn.put("role", role);
-            ArrayNode parts = turn.putArray("parts");
-
-            if (m.role().equals("tool")) {
-                // content is encoded as: <toolName>|||<resultText>
-                String[] split = m.content().split("\\|\\|\\|", 2);
-                ObjectNode fr = parts.addObject().putObject("functionResponse");
-                fr.put("name", split[0]);
-                ObjectNode resp = fr.putObject("response");
-                resp.put("result", split.length > 1 ? split[1] : "");
-            } else if (m.content().startsWith("__TOOLCALL__")) {
-                // Encoded model-side tool call: __TOOLCALL__<name>|||<argsJson>
-                String payload = m.content().substring("__TOOLCALL__".length());
-                String[] split = payload.split("\\|\\|\\|", 2);
-                ObjectNode fc = parts.addObject().putObject("functionCall");
-                fc.put("name", split[0]);
-                try {
-                    fc.set("args", json.readTree(split.length > 1 ? split[1] : "{}"));
-                } catch (Exception e) {
-                    fc.putObject("args");
-                }
-            } else {
-                parts.addObject().put("text", m.content());
-            }
-        }
-        return contents;
-    }
-
-    private JsonNode post(ObjectNode body) throws Exception {
-        appendLog("→ REQUEST\n" + body.toPrettyString() + "\n");
+    private GeminiResponse post(GeminiRequest request) throws Exception {
+        String requestBody = json.writeValueAsString(request);
+        appendLog("→ REQUEST\n" + json.writerWithDefaultPrettyPrinter().writeValueAsString(request) + "\n");
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(URL + "?key=" + apiKey))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
 
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
@@ -232,7 +201,7 @@ public class GeminiClient {
             throw new RuntimeException("Gemini error " + res.statusCode() + ": " + res.body());
         }
         appendLog("← RESPONSE\n" + res.body() + "\n");
-        return json.readTree(res.body());
+        return json.readValue(res.body(), GeminiResponse.class);
     }
 
     /** Append to gemini.log so traffic can be tailed in a split terminal. */
@@ -244,12 +213,5 @@ public class GeminiClient {
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.APPEND);
         } catch (Exception ignored) {}
-    }
-
-    private String extractText(JsonNode response) {
-        return response
-                .path("candidates").path(0)
-                .path("content").path("parts").path(0)
-                .path("text").asText("");
     }
 }

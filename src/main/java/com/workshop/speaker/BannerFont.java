@@ -1,4 +1,4 @@
-package com.workshop.utilities;
+package com.workshop.speaker;
 
 import java.util.HashMap;
 import java.util.Map;

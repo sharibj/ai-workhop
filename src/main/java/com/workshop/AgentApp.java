@@ -1,54 +1,34 @@
 package com.workshop;
 
-import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.workshop.models.Conversation;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workshop.constants.Role;
+import com.workshop.gemini.GeminiClient;
+import com.workshop.gemini.GeminiRequest;
+import com.workshop.gemini.GeminiRequest.SystemInstruction;
+import com.workshop.gemini.models.Content;
+import com.workshop.models.NameReply;
+import com.workshop.speaker.Speaker;
 import com.workshop.tools.SpeakTool;
 import com.workshop.tools.ToolRegistry;
-import com.workshop.utilities.GeminiClient;
-import com.workshop.utilities.Speaker;
 
-import static com.workshop.constants.Flags.USE_AGENT_LOOP;
-import static com.workshop.constants.Flags.USE_MEMORY;
-import static com.workshop.constants.Flags.USE_REAL_TTS;
-import static com.workshop.constants.Flags.USE_SYSTEM_PROMPT;
-import static com.workshop.constants.Flags.USE_TOOLS;
+import static com.workshop.constants.Prompts.SAY_MY_NAME_SYSTEM_PROMPT;
 
 /**
  * AgentApp — the only entry point.
  */
 public class AgentApp {
 	
-	public static void main(String[] args) throws Exception {
-		
-		// Initialise
-		GeminiClient gemini = getGeminiClient();
-		Conversation conversation = new Conversation();
-		Speaker speaker = new Speaker(gemini, USE_REAL_TTS);
-		
-		// STEP 1: Say my name
-		
-		// STEP 2: Remember my name
-		// the memory is nothing but a record of all conversations that forms context
-		
-		// STEP 3: Say my name... literally
-		// the system prompt is how we shape the model's behavior.
-		
-		/*if (USE_STRUCTURED_OUTPUT) {
-			conversation.setSystemPrompt(SAY_MY_NAME_SYSTEM_PROMPT);
-		}*/
-		
-		// Tools are ALWAYS registered — they just stay unused until USE_TOOLS=true.
-		ToolRegistry tools = new ToolRegistry();
-		tools.register(new SpeakTool(speaker));
-		
-		AgentLoop agent = new AgentLoop(gemini, conversation, tools);
-		
+	private static final boolean USE_REAL_TTS = true;
+	private static final List<Content> history = new ArrayList<>();
+	
+	
+	public static void main(String[] args) {
 		Scanner in = new Scanner(System.in);
 		System.out.println("Say-My-Name agent ready. Type 'exit' to quit.");
-		
 		while (true) {
 			System.out.print("\nyou> ");
 			if (!in.hasNextLine()) {
@@ -61,68 +41,152 @@ public class AgentApp {
 			if (userInput.equalsIgnoreCase("exit")) {
 				break;
 			}
-			String reply;
 			
 			try {
-				if (USE_AGENT_LOOP) {
-					// STEP 5: the loop drives multi-turn tool use until the model is done.
-					reply = agent.run(userInput);
-				} else if (USE_TOOLS) {
-					// STEP 4: single-shot tool call — model may emit ONE tool call,
-					// we execute it, but we do NOT loop back yet.
-					reply = singleTurnWithTools(gemini, conversation, tools, userInput);
-				} else if (USE_MEMORY) {
-					// STEP 2/3: stateful chat, optionally asking for JSON.
-					conversation.addUser(userInput);
-					try {
-						reply = gemini.chat(conversation, USE_SYSTEM_PROMPT);
-						conversation.addModel(reply);
-					} catch (Exception ex) {
-						conversation.dropLast();
-						throw ex;
-					}
-					if (USE_SYSTEM_PROMPT) {
-						// STEP 3: parse the JSON the model gave us, then "say" the name.
-						// The model returns {name, message}:
-						//   - 'message' is the conversational reply (always shown).
-						//   - 'name'    fires the speaker ONLY when non-empty.
-						// Students should see: the LLM only returned data; OUR Java code
-						// decides what to do with each field.
-						Optional<JsonNode> parsed = StructuredParser.tryParse(reply);
-						if (parsed.isPresent()) {
-							JsonNode p = parsed.get();
-							String name = p.path("name").asText("");
-							String message = p.path("message").asText("");
-							System.out.println("model_json> " + reply);
-							if (!message.isBlank()) {
-								reply = message;
-							}
-							if (!name.isBlank()) {
-								System.out.print("👨‍💻 java_code: name=\"" + name + "\" detected. " +
-										"Invoke speaker? (y/n) ");
-								String confirm = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "n";
-								if (confirm.equals("y") || confirm.equals("yes")) {
-									speaker.speak(name, Speaker.Source.CODE);
-								} else {
-									System.out.println("   skipped.");
-								}
-							} else {
-								System.out.println("👨‍💻 java_code: name is empty → speaker NOT called");
-							}
-						}
-					}
-				} else {
-					// STEP 1: stateless single-shot call. The simplest possible chatbot.
-					reply = gemini.complete(userInput);
-				}
+				processUserInput(userInput);
 			} catch (Exception e) {
-				System.out.println("bot> [error] " + e.getMessage());
-				System.out.println("       (try again — the model may be overloaded)");
-				continue;
+				e.printStackTrace();
 			}
-			
-			System.out.println("bot> " + reply);
 		}
+	}
+	
+	
+	/**
+	 * Workshop Format:
+	 * <p>
+	 * // STEP 1: Say my name
+	 * //		step1(userInput);
+	 * <p>
+	 * // STEP 2: Remember my name
+	 * // the memory is nothing but a record of all conversations that forms context
+	 * //		step2(userInput);
+	 * <p>
+	 * // STEP 3: Say my name... literally
+	 * // the system prompt is how we shape the model's behavior.
+	 * //		step3(userInput);
+	 * <p>
+	 * <p>
+	 * // STEP 4: Say my name... automatically
+	 * // Use tool call
+	 * //		step4(userInput);
+	 * <p>
+	 * // STEP 5: Keep trying until you say my name
+	 * //Agent loop
+	 * //		step5(userInput);
+	 *
+	 */
+	private static void processUserInput(String userInput) throws Exception {
+		step5(userInput);
+	}
+	
+	
+	private static void step5(String userInput) throws Exception {
+		GeminiClient gemini = getGeminiClient();
+		
+		Speaker speaker = new Speaker(gemini, USE_REAL_TTS, true);
+		ToolRegistry tools = new ToolRegistry();
+		tools.register(new SpeakTool(speaker));
+		
+		history.add(new Content(Role.USER, userInput));
+		
+		for (int step = 1; step <= 6; step++) {
+			System.out.println("🔁 step " + step + " — asking model...");
+			GeminiRequest geminiRequest = new GeminiRequest(history);
+			geminiRequest.systemInstruction =
+					new SystemInstruction("Retry tool call if it fails. Keep trying until success");
+			
+			geminiRequest.setTools(tools);
+			
+			GeminiClient.Reply reply = gemini.chatWithTools(geminiRequest);
+			
+			if (reply.toolCall != null) {
+//				System.out.println("  ↳ 🤖 tool call:   " + reply.toolCall.name + " " + reply.toolCall.args);
+				history.add(
+						new Content(Role.MODEL, "__TOOLCALL__" + reply.toolCall.name + "|||" + reply.toolCall.args));
+				String result = tools.execute(reply.toolCall.name, reply.toolCall.args);
+//				System.out.println("  ↳ 📦 tool result: " + result);
+				history.add(new Content(Role.TOOL, reply.toolCall.name + "|||" + result));
+			} else {
+				history.add(new Content(Role.MODEL, reply.text));
+				System.out.println("bot> " + reply.text);
+				break;
+			}
+		}
+	}
+	
+	
+	private static void step4(String userInput) throws Exception {
+		GeminiClient gemini = getGeminiClient();
+		history.add(new Content(Role.USER, userInput));
+		GeminiRequest geminiRequest = new GeminiRequest(history);
+		
+		Speaker speaker = new Speaker(gemini, USE_REAL_TTS);
+		SpeakTool speakTool = new SpeakTool(speaker);
+		
+		ToolRegistry tools = new ToolRegistry();
+		tools.register(speakTool);
+		
+		geminiRequest.setTools(tools);
+		
+		GeminiClient.Reply reply = gemini.chatWithTools(geminiRequest);
+		if (reply.toolCall != null) {
+			System.out.println("🤖 llm_call: " + reply.toolCall.name + "(" + reply.toolCall.args + ")");
+			String result = tools.execute(reply.toolCall.name, reply.toolCall.args);
+			System.out.println("📦 tool result: " + result);
+		} else if (!reply.text.isBlank()) {
+			history.add(new Content(Role.MODEL, reply.text));
+			System.out.println("bot> " + reply.text);
+		}
+	}
+	
+	
+	private static void step3(String userInput)
+			throws Exception {
+		GeminiClient gemini = getGeminiClient();
+		history.add(new Content(Role.USER, userInput));
+		GeminiRequest geminiRequest = new GeminiRequest(history);
+		geminiRequest.systemInstruction = new SystemInstruction(
+				SAY_MY_NAME_SYSTEM_PROMPT
+		);
+		String response = gemini.complete(geminiRequest);
+		
+		NameReply nameReply = tryParse(response);
+		if (!nameReply.message.isBlank()) {
+			history.add(new Content(Role.MODEL, nameReply.message));
+			System.out.println("bot> " + nameReply.message);
+		}
+		
+		if (!nameReply.name.isBlank()) {
+			System.out.print("👨‍💻 java_code: name=\"" + nameReply.name + "\" detected. " +
+					"Invoke speaker? (y/n) ");
+			
+			Scanner in = new Scanner(System.in);
+			String confirm = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "n";
+			if (confirm.equals("y") || confirm.equals("yes")) {
+				Speaker speaker = new Speaker(gemini, USE_REAL_TTS);
+				speaker.speak(nameReply.name, Speaker.Source.CODE);
+			} else {
+				System.out.println("   skipped.");
+			}
+		} else {
+			System.out.println("👨‍💻 java_code: name is empty → speaker NOT called");
+		}
+	}
+	
+	
+	private static void step2(String userInput) throws Exception {
+		GeminiClient gemini = getGeminiClient();
+		history.add(new Content(Role.USER, userInput));
+		String reply = gemini.complete(history);
+		history.add(new Content(Role.MODEL, reply));
+		System.out.println("bot> " + reply);
+	}
+	
+	
+	private static void step1(String userInput) throws Exception {
+		GeminiClient gemini = getGeminiClient();
+		String reply = gemini.complete(userInput);
+		System.out.println("bot> " + reply);
 	}
 	
 	
@@ -135,35 +199,33 @@ public class AgentApp {
 		}
 		
 		// Setup Gemini Client
-		GeminiClient gemini = new GeminiClient(apiKey);
-		return gemini;
+		return new GeminiClient(apiKey);
 	}
 	
 	
-	/**
-	 * STEP 4 helper — one round-trip with tools enabled, no loop.
-	 * Demonstrates: model returns either text OR a functionCall; we run it once.
-	 */
-	private static String singleTurnWithTools(GeminiClient gemini,
-			Conversation memory,
-			ToolRegistry tools,
-			String userInput) throws Exception {
-		memory.addUser(userInput);
-		GeminiClient.Reply r;
+	private static final ObjectMapper M = new ObjectMapper();
+	
+	
+	private static NameReply tryParse(String raw) {
+		if (raw == null || raw.isBlank()) {
+			return new NameReply();
+		}
+		String trimmed = raw.trim();
+		// Tolerate ```json fences if the model adds them.
+		if (trimmed.startsWith("```")) {
+			int firstNl = trimmed.indexOf('\n');
+			if (firstNl > 0) {
+				trimmed = trimmed.substring(firstNl + 1);
+			}
+			if (trimmed.endsWith("```")) {
+				trimmed = trimmed.substring(0, trimmed.length() - 3).trim();
+			}
+		}
 		try {
-			r = gemini.chatWithTools(memory, tools.declarations());
-		} catch (Exception ex) {
-			memory.dropLast();
-			throw ex;
+			return M.readValue(trimmed, NameReply.class);
+		} catch (Exception e) {
+			return new NameReply();
 		}
-		if (r.toolCall != null) {
-			System.out.println("🤖 llm_call: " + r.toolCall.name + "(" + r.toolCall.args + ")");
-			String result = tools.execute(r.toolCall.name, r.toolCall.args);
-			memory.addModelToolCall(r.toolCall.name, r.toolCall.args);
-			memory.addToolResult(r.toolCall.name, result);
-			return "[tool " + r.toolCall.name + " executed → " + result + "]";
-		}
-		memory.addModel(r.text);
-		return r.text;
 	}
 }
+

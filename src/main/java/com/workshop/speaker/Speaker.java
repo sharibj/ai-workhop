@@ -1,10 +1,12 @@
-package com.workshop.utilities;
+package com.workshop.speaker;
 
 import java.io.ByteArrayInputStream;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
 import javax.sound.sampled.LineEvent;
+
+import com.workshop.gemini.GeminiClient;
 
 /**
  * The "speaker" of our agent — turns a name into output the human can perceive.
@@ -24,13 +26,28 @@ public class Speaker {
 	private final GeminiClient gemini;
 	private final boolean useRealTts;
 	
+	// STEP 5 demo: simulate a flaky speaker that fails ~50% of the time.
+	// The model sees the failure in the tool result and must DECIDE to retry.
+	// This is what makes the loop's value visible — without flakiness, one
+	// tool call would suffice and there'd be nothing for the loop to do.
+	private final boolean isBroken;
+	
 	
 	public Speaker(GeminiClient gemini, boolean useRealTts) {
 		this.gemini = gemini;
 		this.useRealTts = useRealTts;
+		this.isBroken = false;
 	}
 	
+	public Speaker(GeminiClient gemini, boolean useRealTts,  boolean isBroken) {
+		this.gemini = gemini;
+		this.useRealTts = useRealTts;
+		this.isBroken = isBroken;
+	}
 	
+	public boolean isBroken() {
+		return isBroken;
+	}
 	public void speak(String name) {
 		speak(name, Source.CODE);
 	}

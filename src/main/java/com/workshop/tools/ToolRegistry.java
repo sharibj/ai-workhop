@@ -1,11 +1,11 @@
 package com.workshop.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workshop.gemini.models.FunctionDeclaration;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -15,23 +15,18 @@ import java.util.Map;
  */
 public class ToolRegistry {
 
-    private static final ObjectMapper M = new ObjectMapper();
     private final Map<String, Tool> tools = new LinkedHashMap<>();
 
     public void register(Tool tool) {
         tools.put(tool.name(), tool);
     }
 
-    /** Build the `functionDeclarations` array Gemini expects. */
-    public ArrayNode declarations() {
-        ArrayNode arr = M.createArrayNode();
+    public List<FunctionDeclaration> declarations() {
+        List<FunctionDeclaration> decls = new ArrayList<>();
         for (Tool t : tools.values()) {
-            ObjectNode decl = arr.addObject();
-            decl.put("name", t.name());
-            decl.put("description", t.description());
-            decl.set("parameters", t.parameterSchema());
+            decls.add(t.declaration());
         }
-        return arr;
+        return decls;
     }
 
     public String execute(String name, JsonNode args) {
