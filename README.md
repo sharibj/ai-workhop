@@ -1,4 +1,4 @@
-# ai-workhop — Pre-flight Check
+# AI Workshop: Pre-flight Check
 
 Welcome! This branch is a tiny readiness check for the **"Demystifying AI Agents — By Building One"** workshop.
 
@@ -17,6 +17,9 @@ Before the workshop, please **run it once.** It tells you whether your machine i
 
 Go to https://aistudio.google.com/apikey, sign in with any Google account, click **Create API key**, copy it.
 
+> The workshop uses pre-written scaffolding so we can focus on concepts rather than plumbing.
+> Gemini was chosen because it offers a free API key. The lessons apply to any LLM.
+
 ### 2. Set it in your shell
 
 ```bash
@@ -28,8 +31,7 @@ export GEMINI_API_KEY=paste-your-key-here
 ### 3. Compile and run
 
 ```bash
-mvn -q clean compile
-mvn -q exec:java
+mvn -q clean compile && mvn -q exec:java
 ```
 
 That's it. You should see:
@@ -62,10 +64,8 @@ The script prints exactly which step broke and a hint. Quick reference:
 | LLM call works | Check the key is valid (no extra spaces); check your network/proxy |
 | TTS + audio playback | Unmute speakers / unplug headphones / try a different audio output |
 
-If you're stuck, ping me — better to debug today than during the workshop.
-
 ## What you DON'T need to do
 
-You don't need to read or understand any of the Java code on this branch — it exists only to verify your setup. The actual workshop code lives on a different branch and we'll explore it together on the day.
+You don't need to read or understand any of the Java code on this branch . It exists only to verify your setup. The actual workshop code lives on a different branch, and we'll explore it together on the day.
 
 See you on the 25th!
