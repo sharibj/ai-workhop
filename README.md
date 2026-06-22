@@ -1,6 +1,6 @@
 # AI Workshop: Pre-flight Check
 
-Welcome! This branch is a tiny readiness check for the **"Demystifying AI Agents — By Building One"** workshop.
+Welcome! This branch is a tiny readiness check for the **"Demystifying AI Agents, By Building One"** workshop.
 
 Before the workshop, please **run it once.** It tells you whether your machine is ready, or what to fix.
 
