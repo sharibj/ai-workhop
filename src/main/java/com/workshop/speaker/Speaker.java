@@ -92,8 +92,9 @@ public class Speaker {
 			clip.open(in);
 			clip.start();
 			synchronized (lock) {
-				lock.wait();
+				lock.wait(10_000);
 			}
+			clip.stop();
 			clip.close();
 		}
 	}

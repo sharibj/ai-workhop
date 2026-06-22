@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workshop.gemini.models.Content;
 import com.workshop.gemini.models.Part;
-import com.workshop.models.Conversation;
-import com.workshop.tools.ToolRegistry;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -76,45 +74,9 @@ public class GeminiClient {
     //   If conv has a system prompt set, it's attached as `systemInstruction`.
     // ─────────────────────────────────────────────────────────────────────
 
-    public String chat(Conversation conversation) throws Exception {
-        return chat(conversation, false);
-    }
-
-    public String chat(Conversation conv, boolean structured) throws Exception {
-        GeminiRequest request = new GeminiRequest(GeminiRequest.contentsFromMessages(conv.messages()));
-
-        if (conv.systemPrompt() != null && !conv.systemPrompt().isBlank()) {
-            request.systemInstruction = new GeminiRequest.SystemInstruction(conv.systemPrompt());
-        }
-
-        if (structured) {
-            request.generationConfig = new GeminiRequest.GenerationConfig();
-            request.generationConfig.responseMimeType = "application/json";
-        }
-
-        return post(request).text();
-    }
-
     // ─────────────────────────────────────────────────────────────────────
     // STEP 4/5 — chat with tool declarations. Model may return a functionCall.
     // ─────────────────────────────────────────────────────────────────────
-    public Reply chatWithTools(Conversation conv, ToolRegistry tools) throws Exception {
-        GeminiRequest request = new GeminiRequest(GeminiRequest.contentsFromMessages(conv.messages()));
-
-        if (conv.systemPrompt() != null && !conv.systemPrompt().isBlank()) {
-            request.systemInstruction = new GeminiRequest.SystemInstruction(conv.systemPrompt());
-        }
-
-        request.setTools(tools);
-
-        GeminiResponse response = post(request);
-        Part.FunctionCall fc = response.functionCall();
-
-        if (fc != null) {
-            return new Reply(null, new ToolCall(fc.name, fc.args));
-        }
-        return new Reply(response.text(), null);
-    }
     public Reply chatWithTools(GeminiRequest request) throws Exception {
         GeminiResponse response = post(request);
         Part.FunctionCall fc = response.functionCall();
