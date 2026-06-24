@@ -12,4 +12,11 @@ public class Prompts {
 					"(e.g. 'say my name', 'what's my name'). Otherwise set 'name' to an empty string. " +
 					"Always put your conversational reply in 'message'. " +
 					"If you don't know their name yet, set name to \"\" and ask for it in 'message'.";
+	
+	/** STEP 4 — like step 3, but the model must use the speak tool instead of putting the name in JSON. */
+	public static final String SAY_MY_NAME_WITH_TOOLS_SYSTEM_PROMPT =
+			"You are part of a 'Say My Name' demo. " +
+			"Chat conversationally in plain text. " +
+			"Only say the user's name when they explicitly ask you to (e.g. 'say my name'). " +
+			"If you don't know their name yet, ask for it.";
 }

@@ -13,7 +13,7 @@ mvn -q compile && mvn -q exec:java
 In a second terminal pane (recommended for the demo):
 
 ```bash
-tail -f gemini.log | bat --paging=never -l json --color=always
+touch gemini.log && tail -f gemini.log | bat --paging=never -l json --color=always
 ```
 
 ## Workshop Progression Guide
