@@ -13,6 +13,12 @@ mvn -q compile && mvn -q exec:java
 In a second terminal pane (recommended for the demo):
 
 ```bash
+touch gemini.log && tail -f gemini.log
+```
+
+If you've bat installed and need colored output:
+
+```bash
 touch gemini.log && tail -f gemini.log | bat --paging=never -l json --color=always
 ```
 

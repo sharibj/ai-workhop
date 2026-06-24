@@ -10,6 +10,7 @@ import com.workshop.gemini.GeminiClient;
 import com.workshop.gemini.GeminiRequest;
 import com.workshop.gemini.GeminiRequest.SystemInstruction;
 import com.workshop.gemini.models.Content;
+import com.workshop.gemini.models.Part;
 import com.workshop.models.NameReply;
 import com.workshop.speaker.Speaker;
 import com.workshop.tools.SpeakTool;
@@ -77,20 +78,20 @@ public class AgentApp {
 	 *
 	 */
 	private static void processUserInput(String userInput) throws Exception {
-		step5(userInput);
+		step1(userInput);
 	}
 	
 	
 	private static void step5(String userInput) throws Exception {
 		GeminiClient gemini = getGeminiClient();
-
+		
 		// flaky speaker: fails ~70% of the time so the model must retry
 		Speaker speaker = new Speaker(gemini, USE_REAL_TTS, true);
 		ToolRegistry tools = new ToolRegistry();
 		tools.register(new SpeakTool(speaker));
-
+		
 		history.add(new Content(Role.USER, userInput));
-
+		
 		// agent loop: keep going until the model returns plain text
 		for (int step = 1; step <= 6; step++) {
 			System.out.println("🔁 step " + step + " — asking model...");
@@ -98,20 +99,21 @@ public class AgentApp {
 			// system prompt: instruct the model to retry on failure
 			geminiRequest.systemInstruction =
 					new SystemInstruction("Retry tool call if it fails. Keep trying until success");
-
+			
 			geminiRequest.setTools(tools);
-
+			
 			GeminiClient.Reply reply = gemini.chatWithTools(geminiRequest);
-
+			
 			if (reply.toolCall != null) {
 				// record the tool call in history so the model sees it next turn
 //				System.out.println("  ↳ 🤖 tool call:   " + reply.toolCall.name + " " + reply.toolCall.args);
-				history.add(
-						new Content(Role.MODEL, "__TOOLCALL__" + reply.toolCall.name + "|||" + reply.toolCall.args));
+				history.add(new Content(Role.MODEL,
+						List.of(Part.ofFunctionCall(reply.toolCall.name, reply.toolCall.args))));
 				String result = tools.execute(reply.toolCall.name, reply.toolCall.args);
 				// record the tool result so the model knows what happened
 //				System.out.println("  ↳ 📦 tool result: " + result);
-				history.add(new Content(Role.TOOL, reply.toolCall.name + "|||" + result));
+				history.add(new Content(Role.USER,
+						List.of(Part.ofFunctionResponse(reply.toolCall.name, result))));
 			} else {
 				// model returned text — it's done
 				history.add(new Content(Role.MODEL, reply.text));
@@ -132,14 +134,14 @@ public class AgentApp {
 		);
 		Speaker speaker = new Speaker(gemini, USE_REAL_TTS);
 		SpeakTool speakTool = new SpeakTool(speaker);
-
+		
 		// register tools so the model knows what it can call
 		ToolRegistry tools = new ToolRegistry();
 		tools.register(speakTool);
-
+		
 		// attach tool declarations to the request
 		geminiRequest.setTools(tools);
-
+		
 		GeminiClient.Reply reply = gemini.chatWithTools(geminiRequest);
 		if (reply.toolCall != null) {
 			// model decided to call a tool — execute it
@@ -164,19 +166,19 @@ public class AgentApp {
 		);
 		// ask for structured (JSON) output so we can parse it
 		String response = gemini.complete(geminiRequest);
-
+		
 		// parse the JSON reply into name + message fields
 		NameReply nameReply = tryParse(response);
 		if (!nameReply.message.isBlank()) {
 			history.add(new Content(Role.MODEL, nameReply.message));
 			System.out.println("bot> " + nameReply.message);
 		}
-
+		
 		if (!nameReply.name.isBlank()) {
 			// human in the loop: we decide whether to invoke the speaker
 			System.out.print("👨‍💻 java_code: name=\"" + nameReply.name + "\" detected. " +
 					"Invoke speaker? (y/n) ");
-
+			
 			Scanner in = new Scanner(System.in);
 			String confirm = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "n";
 			if (confirm.equals("y") || confirm.equals("yes")) {

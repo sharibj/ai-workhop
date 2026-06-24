@@ -42,7 +42,7 @@ public class SpeakTool implements Tool {
 	public String description() {
 		// Note: we deliberately do NOT mention the flakiness here. We want the
 		// model to discover it from the error string, not be told up front.
-		return "Say a person's name out loud. Use this whenever the user asks you to say their name.";
+		return "Say a person's name out loud. Use this only when the user asks you to say their name.";
 	}
 	
 	
